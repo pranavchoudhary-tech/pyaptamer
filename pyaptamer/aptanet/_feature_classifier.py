@@ -423,6 +423,30 @@ class AptaNetRegressor(RegressorMixin, BaseEstimator):
         return self.pipeline_.predict(X).reshape(-1)
 
     def score(self, X, y):
+        """
+        Return the coefficient of determination of the prediction.
+
+        The coefficient of determination :math:`R^2` is defined as
+        :math:`(1 - \\frac{u}{v})`, where :math:`u` is the residual
+        sum of squares ``((y_true - y_pred)** 2).sum()`` and :math:`v`
+        is the total sum of squares ``((y_true - y_true.mean()) ** 2).sum()``.
+        The best possible score is 1.0 and it can be negative (because the
+        model can be arbitrarily worse). A constant model that always
+        predicts the expected value of `y`, disregarding the input features,
+        would get a :math:`R^2` score of 0.0.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Test samples.
+        y : array-like of shape (n_samples,)
+            True values for `X`.
+
+        Returns
+        -------
+        score : float
+            :math:`R^2` of ``self.predict(X)`` w.r.t. `y`.
+        """
         from sklearn.metrics import r2_score
 
         return r2_score(y, self.predict(X))
