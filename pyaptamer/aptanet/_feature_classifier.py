@@ -29,6 +29,50 @@ class AptaNetClassifier(ClassifierMixin, BaseEstimator):
 
     The estimator is non-deterministic and only supports binary classification.
 
+    Parameters
+    ----------
+    input_dim : int or None, default=None
+        Size of the input layer in the neural net. If `None`, it is inferred
+        from the feature matrix shape by the underlying module.
+    hidden_dim : int, default=128
+        Number of units in each hidden layer of the neural net.
+    n_hidden : int, default=7
+        Number of hidden layers in the neural net.
+    dropout : float, default=0.3
+        Dropout probability used in the neural net.
+    max_epochs : int, default=200
+        Maximum number of training epochs for the neural net.
+    lr : float, default=0.00014
+        Learning rate for the optimizer.
+    alpha : float, default=0.9
+        Discounting factor (rho) for the squared-gradient moving average
+        in RMSprop. Only used when `optimizer` is `torch.optim.RMSprop`.
+    eps : float, default=1e-08
+        Epsilon value for numerical stability in the optimizer.
+    weight_decay : float, default=0.0
+        L2 regularization penalty applied by the optimizer.
+    n_estimators : int, default=300
+        Number of trees in the `RandomForestClassifier` used for feature
+        selection. Ignored when a custom `estimator` is provided.
+    max_depth : int or None, default=9
+        Maximum depth of each tree in the `RandomForestClassifier` used for
+        feature selection. Ignored when a custom `estimator` is provided.
+    optimizer : torch.optim.Optimizer class, default=None
+        Optimizer class passed to skorch for neural network training.
+        If `None`, defaults to `torch.optim.RMSprop`.
+    device : str or None, default=None
+        Device string for skorch (e.g. `"cpu"`, `"cuda"`, `"cuda:1"`).
+        If `None`, uses `"cuda"` when a GPU is available, else `"cpu"`.
+    estimator : sklearn estimator or None, default=None
+        Estimator passed to `SelectFromModel`. If `None`, uses a
+        `RandomForestClassifier` with `n_estimators` and `max_depth`.
+    random_state : int or None, default=None
+        Seed for NumPy and Torch random generators.
+    threshold : str or float, default="mean"
+        Feature-selection threshold passed to `SelectFromModel`.
+    verbose : int, default=0
+        Verbosity level for the underlying skorch neural net.
+
     References
     ----------
     .. [1] Emami, N., Ferdousi, R. AptaNet as a deep learning approach for
@@ -48,6 +92,11 @@ class AptaNetClassifier(ClassifierMixin, BaseEstimator):
         lr=0.00014,
         alpha=0.9,
         eps=1e-08,
+        weight_decay=0.0,
+        n_estimators=300,
+        max_depth=9,
+        optimizer=None,
+        device=None,
         estimator=None,
         random_state=None,
         threshold="mean",
@@ -61,6 +110,11 @@ class AptaNetClassifier(ClassifierMixin, BaseEstimator):
         self.lr = lr
         self.alpha = alpha
         self.eps = eps
+        self.weight_decay = weight_decay
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.optimizer = optimizer
+        self.device = device
         self.estimator = estimator
         self.random_state = random_state
         self.threshold = threshold
@@ -70,11 +124,16 @@ class AptaNetClassifier(ClassifierMixin, BaseEstimator):
         from skorch import NeuralNetBinaryClassifier
 
         base_estimator = self.estimator or RandomForestClassifier(
-            n_estimators=300, max_depth=9, random_state=self.random_state
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            random_state=self.random_state,
         )
         selector = SelectFromModel(
             estimator=clone(base_estimator), threshold=self.threshold
         )
+
+        optimizer = self.optimizer if self.optimizer is not None else optim.RMSprop
+        device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
 
         net = NeuralNetBinaryClassifier(
             module=AptaNetMLP,
@@ -87,10 +146,11 @@ class AptaNetClassifier(ClassifierMixin, BaseEstimator):
             criterion=nn.BCEWithLogitsLoss,
             max_epochs=self.max_epochs,
             lr=self.lr,
-            optimizer=optim.RMSprop,
+            optimizer=optimizer,
             optimizer__alpha=self.alpha,
             optimizer__eps=self.eps,
-            device="cuda" if torch.cuda.is_available() else "cpu",
+            optimizer__weight_decay=self.weight_decay,
+            device=device,
             verbose=self.verbose,
         )
         return Pipeline([("select", selector), ("net", net)])
@@ -199,8 +259,8 @@ class AptaNetRegressor(RegressorMixin, BaseEstimator):
     Parameters
     ----------
     input_dim : int or None, default=None
-        Size of the input layer in the neural net. If `None`, it should be
-        inferred from the feature matrix shape by the underlying module.
+        Size of the input layer in the neural net. If `None`, it is inferred
+        from the feature matrix shape by the underlying module.
     hidden_dim : int, default=128
         Number of units in each hidden layer of the neural net.
     n_hidden : int, default=7
@@ -210,19 +270,35 @@ class AptaNetRegressor(RegressorMixin, BaseEstimator):
     max_epochs : int, default=200
         Maximum number of training epochs for the neural net.
     lr : float, default=0.00014
-        Learning rate for the optimizer (RMSprop).
+        Learning rate for the optimizer.
     alpha : float, default=0.9
-        Discounting factor (rho) for the squared-gradient moving average in RMSprop.
+        Discounting factor (rho) for the squared-gradient moving average
+        in RMSprop. Only used when `optimizer` is `torch.optim.RMSprop`.
     eps : float, default=1e-08
-        Epsilon value for numerical stability in RMSprop.
+        Epsilon value for numerical stability in the optimizer.
+    weight_decay : float, default=0.0
+        L2 regularization penalty applied by the optimizer.
+    n_estimators : int, default=300
+        Number of trees in the `RandomForestRegressor` used for feature
+        selection. Ignored when a custom `estimator` is provided.
+    max_depth : int or None, default=9
+        Maximum depth of each tree in the `RandomForestRegressor` used for
+        feature selection. Ignored when a custom `estimator` is provided.
+    optimizer : torch.optim.Optimizer class, default=None
+        Optimizer class passed to skorch for neural network training.
+        If `None`, defaults to `torch.optim.RMSprop`.
+    device : str or None, default=None
+        Device string for skorch (e.g. `"cpu"`, `"cuda"`, `"cuda:1"`).
+        If `None`, uses `"cuda"` when a GPU is available, else `"cpu"`.
     estimator : sklearn estimator or None, default=None
-        Estimator used for feature selection. If `None`, a `RandomForestRegressor`.
+        Estimator passed to `SelectFromModel`. If `None`, uses a
+        `RandomForestRegressor` with `n_estimators` and `max_depth`.
     random_state : int or None, default=None
-        Random seed for reproducibility. When set, both NumPy and Torch seeds are fixed.
+        Seed for NumPy and Torch random generators.
     threshold : str or float, default="mean"
-        Threshold passed to `SelectFromModel` (e.g., "mean" or a float).
+        Feature-selection threshold passed to `SelectFromModel`.
     verbose : int, default=0
-        Verbosity level for the underlying skorch `NeuralNetBinaryRegressor`.
+        Verbosity level for the underlying skorch neural net.
     """
 
     def __init__(
@@ -235,6 +311,11 @@ class AptaNetRegressor(RegressorMixin, BaseEstimator):
         lr=0.00014,
         alpha=0.9,
         eps=1e-08,
+        weight_decay=0.0,
+        n_estimators=300,
+        max_depth=9,
+        optimizer=None,
+        device=None,
         estimator=None,
         random_state=None,
         threshold="mean",
@@ -248,6 +329,11 @@ class AptaNetRegressor(RegressorMixin, BaseEstimator):
         self.lr = lr
         self.alpha = alpha
         self.eps = eps
+        self.weight_decay = weight_decay
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.optimizer = optimizer
+        self.device = device
         self.estimator = estimator
         self.random_state = random_state
         self.threshold = threshold
@@ -257,11 +343,16 @@ class AptaNetRegressor(RegressorMixin, BaseEstimator):
         from skorch import NeuralNetRegressor
 
         base_estimator = self.estimator or RandomForestRegressor(
-            n_estimators=300, max_depth=9, random_state=self.random_state
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            random_state=self.random_state,
         )
         selector = SelectFromModel(
             estimator=clone(base_estimator), threshold=self.threshold
         )
+
+        optimizer = self.optimizer if self.optimizer is not None else optim.RMSprop
+        device = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
 
         net = NeuralNetRegressor(
             module=AptaNetMLP,
@@ -274,10 +365,11 @@ class AptaNetRegressor(RegressorMixin, BaseEstimator):
             criterion=nn.MSELoss,
             max_epochs=self.max_epochs,
             lr=self.lr,
-            optimizer=optim.RMSprop,
+            optimizer=optimizer,
             optimizer__alpha=self.alpha,
             optimizer__eps=self.eps,
-            device="cuda" if torch.cuda.is_available() else "cpu",
+            optimizer__weight_decay=self.weight_decay,
+            device=device,
             verbose=self.verbose,
         )
 
